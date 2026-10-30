@@ -1,0 +1,34 @@
+name: Local build
+
+# Builds the app the way `make release` does (Release, ad-hoc signed, not
+# notarized) and uploads it as an artifact, for installing on one's own Mac
+# where the local Xcode is too old to build it.
+on:
+  push:
+    branches: [local-build]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build herdrm.app (make release)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - run: make release
+      # ditto keeps the frameworks' symlinks, which the artifact upload would flatten.
+      - name: Zip the app
+        run: |
+          codesign --verify --deep --strict build/Build/Products/Release/herdrm.app
+          ditto -c -k --keepParent build/Build/Products/Release/herdrm.app herdrm.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: herdrm-app
+          path: herdrm.zip
+          retention-days: 7
