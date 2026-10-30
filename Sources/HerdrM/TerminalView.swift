@@ -1934,6 +1934,15 @@ final class LineBreakTerminalView: AppTerminalView {
                     pastePasteboardText()
                     return
                 }
+                // A local program reads the typed path after the paste, so the
+                // image stays in its store. Only the upload route, which copies it, deletes it.
+                if case .local = attachmentDeviceKind {
+                    let fileURLs = files.map(\.localURL)
+                    deliverTypedPaths(of: fileURLs) {
+                        sendPastedText(fileURLs.map { pathSyntax.format($0.path) }.joined(separator: " "))
+                    }
+                    return
+                }
                 enqueuePathPaste(files, pathSyntax: pathSyntax)
             } catch {
                 reportAttachmentError(error)
@@ -2139,23 +2148,7 @@ final class LineBreakTerminalView: AppTerminalView {
             throw ClipboardFileError.imageEncodingFailed
         }
 
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-clipboard", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
-        )
-        let localURL = directory.appendingPathComponent("\(UUID().uuidString.lowercased()).png")
-        try png.write(to: localURL, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: localURL.path
-        )
+        let localURL = try ClipboardImageStore().write(png: png)
         return [ClipboardFile(localURL: localURL, removeAfterUpload: true)]
     }
 
@@ -2278,7 +2271,8 @@ struct AttachTerminalView: NSViewRepresentable {
     var workingDirectory: String? = nil
     /// The device's herdr server version, so attach picks a matching CLI binary.
     var serverVersion: String?
-    /// nil when the server or active manifest does not advertise attachment support.
+    /// `.bareShell` for a terminal pane. For an agent, nil when the server or
+    /// active manifest does not advertise attachment support.
     let attachmentCapabilities: AgentAttachmentCapabilities?
     /// herdr's agent kind for the pane (`"claude"`, …); nil for a bare shell.
     /// Only Claude panes paint pasted images into their thumbnail boxes.
@@ -2608,8 +2602,9 @@ struct ShellTerminalView: NSViewRepresentable {
         let host = TerminalProcessHost()
         let view = LineBreakTerminalView(frame: .zero)
         view.processHost = host
-        // A shell has no agent manifest: pastes go through as text, while
-        // dropped files still upload to a remote device.
+        // A shell has no agent manifest: text pastes as text, a clipboard
+        // image as its path, and dropped files still upload to a remote device.
+        view.attachmentCapabilities = .bareShell
         view.attachmentDeviceKind = device.kind
         view.attachmentService = HerdrService(device: device, autoStartLocalServer: false)
         view.onAttachmentError = onAttachmentError

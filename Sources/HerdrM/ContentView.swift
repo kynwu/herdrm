@@ -868,7 +868,7 @@ struct DetailView: View {
         inTabLayout: Bool
     ) -> some View {
         let attachmentCapabilities: AgentAttachmentCapabilities? = {
-            guard case .agent(let agentEntry) = session else { return nil }
+            guard case .agent(let agentEntry) = session else { return .bareShell }
             return model.attachmentCapabilities(for: agentEntry)
         }()
         ZStack {

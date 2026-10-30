@@ -72,6 +72,45 @@ final class AttachmentDeliveryTests: XCTestCase {
         )
     }
 
+    // A bare shell, or a wrapper herdr cannot name (a script running Claude),
+    // gets an image as a path it can read. It never gets ^V, which is
+    // quoted-insert in zsh and bash.
+    func testBareShellLocalImageDataPastesPath() {
+        XCTAssertEqual(
+            AgentAttachmentDeliveryPolicy.action(
+                capabilities: .bareShell, deviceKind: .local, source: .imageData
+            ),
+            .devicePaths(.shellQuoted)
+        )
+    }
+
+    func testBareShellImageFilesPastePaths() {
+        XCTAssertEqual(
+            AgentAttachmentDeliveryPolicy.action(
+                capabilities: .bareShell, deviceKind: .local, source: .files(allImages: true)
+            ),
+            .devicePaths(.shellQuoted)
+        )
+    }
+
+    func testBareShellOtherFilesStayText() {
+        XCTAssertEqual(
+            AgentAttachmentDeliveryPolicy.action(
+                capabilities: .bareShell, deviceKind: .local, source: .files(allImages: false)
+            ),
+            .unsupported
+        )
+    }
+
+    func testBareShellRemoteImageDataUploadsAndPastesPath() {
+        XCTAssertEqual(
+            AgentAttachmentDeliveryPolicy.action(
+                capabilities: .bareShell, deviceKind: ssh, source: .imageData
+            ),
+            .devicePaths(.shellQuoted)
+        )
+    }
+
     func testUnknownAgentIsUnsupported() {
         XCTAssertEqual(
             AgentAttachmentDeliveryPolicy.action(

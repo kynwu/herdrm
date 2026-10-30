@@ -52,6 +52,15 @@ public struct AgentAttachmentCapabilities: Decodable, Sendable, Equatable {
     }
 }
 
+public extension AgentAttachmentCapabilities {
+    /// A bare shell has no agent manifest, and neither does a wrapper herdr
+    /// cannot name, such as a script that runs Claude. An image reaches it as
+    /// a path: a shell gets a file it can use, and an agent behind the wrapper
+    /// attaches it. ^V is never forwarded, because zsh and bash read it as
+    /// quoted-insert. Other files still paste as text.
+    static let bareShell = AgentAttachmentCapabilities(imagePath: .shellQuoted)
+}
+
 public struct AgentManifestCapabilities: Decodable, Sendable, Equatable {
     public let attachments: AgentAttachmentCapabilities?
 }
