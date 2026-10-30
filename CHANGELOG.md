@@ -7,6 +7,15 @@ the Sparkle update description — a release without a section here fails CI.
 
 ## [Unreleased]
 
+### Added
+- **⌘V pastes clipboard images into terminal panes.** A pane that herdr does
+  not name as an agent, such as a bare shell or a script that runs Claude, now
+  gets a copied image as the quoted path of a private PNG. Claude behind the
+  script attaches it as `[Image #1]`, and a shell gets a file it can use. A
+  copied image file pastes as its path too. On a remote device the image
+  uploads first, as a dropped file does. Local images are removed after a
+  week, on a later paste. Text, other files and agent panes paste as before.
+
 ### Fixed
 - **Cancelled project inspections do not report false failures.** If the main
   remote probe has completed while the optional local-VM probe is still pending,

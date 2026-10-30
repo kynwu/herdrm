@@ -110,6 +110,8 @@ macOS window on top of it, and it's grown well past "attach to a terminal":
 - **Paste files and images** into Claude Code, Codex, Copilot, Cursor, Gemini, Grok, OpenCode,
   or pi. Local pastes forward as Ctrl+V so the agent reads the clipboard itself; remote pastes
   stream over SSH into a self-pruning cache (7-day retention, 50 MB cap) and paste the path.
+  A pane herdr does not name as an agent, such as a shell or a script that runs one, gets a
+  pasted image as the path of a private PNG.
 - **Search** — ⌘K across every device, ordered by urgency, scrolling to follow your selection.
 - **Notifications** — a sound and a system alert when any agent finishes or needs input;
   clicking jumps straight to it. Agents you're already watching stay quiet.
