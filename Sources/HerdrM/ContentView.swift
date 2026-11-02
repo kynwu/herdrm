@@ -22,42 +22,28 @@ private struct NewItemSheets: ViewModifier {
     }
 }
 
-/// Window-sized dismissal layer, with the panel anchored above the sidebar meters.
+/// The machine stats panel, anchored above the sidebar's device card. It is a
+/// hover panel: the card and the panel keep it open, leaving both hides it, so
+/// nothing covers the window to catch clicks.
 struct MachineStatsOverlay: View {
     @ObservedObject var model: AppModel
     let device: Device
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .bottomLeading) {
-                MachineStatsDismissLayer { model.showMachineStats = false }
-                MachineStatsPanel(
-                    model: model,
-                    stats: model.machineStats,
-                    device: device,
-                    isPresented: $model.showMachineStats
-                )
-                .frame(maxHeight: max(0, geometry.size.height - SidebarFooterMetrics.deviceSwitcherHeight - SidebarFooterMetrics.statsHeight - 6 - TitlebarMetrics.height - 10), alignment: .bottom)
-                .padding(.leading, 10)
-                .padding(.bottom, SidebarFooterMetrics.deviceSwitcherHeight + SidebarFooterMetrics.statsHeight + 6)
-            }
+            let bottom = SidebarFooterMetrics.height(showsStats: true) + 6
+            MachineStatsPanel(
+                model: model,
+                stats: model.machineStats,
+                device: device,
+                isPresented: $model.showMachineStats
+            )
+            .onHover { model.setMachineStatsHover(panel: $0) }
+            .frame(maxHeight: max(0, geometry.size.height - bottom - TitlebarMetrics.height - 10), alignment: .bottom)
+            .padding(.leading, 10)
+            .padding(.bottom, bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
-    }
-}
-
-private struct MachineStatsDismissLayer: NSViewRepresentable {
-    let dismiss: () -> Void
-
-    func makeNSView(context: Context) -> DismissView { DismissView() }
-
-    func updateNSView(_ view: DismissView, context: Context) {
-        view.dismiss = dismiss
-    }
-
-    final class DismissView: NSView {
-        var dismiss: (() -> Void)?
-
-        override func mouseDown(with event: NSEvent) { dismiss?() }
     }
 }
 
@@ -66,6 +52,7 @@ struct RootView: View {
     @ObservedObject var model: AppModel
     // Deliberately not persisted: the app always launches with the sidebar visible.
     @State private var sidebarCollapsed = false
+    @AppStorage(MachineStatsDefaults.showKey) private var showsMachineStats = true
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -82,7 +69,8 @@ struct RootView: View {
                     .onTapGesture { model.showDevicePanel = false }
                 DevicePopover(model: model, isPresented: $model.showDevicePanel)
                     .padding(.leading, 10)
-                    .padding(.bottom, 46)
+                    .padding(.bottom, SidebarFooterMetrics.height(
+                        showsStats: showsMachineStats && model.statsDevice != nil) + 6)
                     .transition(.scale(scale: 0.96, anchor: .bottomLeading).combined(with: .opacity))
                     .background(
                         Button("") { model.showDevicePanel = false }
@@ -204,8 +192,14 @@ struct RootView: View {
 /// Sidebar footer metrics. The device switcher is 40pt; the machine-stats block
 /// sits just above it, and the stats panel opens upward from there.
 enum SidebarFooterMetrics {
+    /// The footer with the device card's switcher line alone.
     static let deviceSwitcherHeight: CGFloat = 40
-    static let statsHeight: CGFloat = 44
+    /// What the figures line under the device name adds to the footer.
+    static let statsHeight: CGFloat = 14
+
+    static func height(showsStats: Bool) -> CGFloat {
+        deviceSwitcherHeight + (showsStats ? statsHeight : 0)
+    }
 }
 
 /// Titlebar metrics: 28pt matches the system traffic-light centerline (14pt) exactly.
@@ -1659,7 +1653,7 @@ struct NewTerminalSheet: View {
                     .fixedSize()
                 }
                 if isStandalone && allowsStandalone {
-                    Text("Runs in this app only; closing herdrm ends the shell.")
+                    Text("Runs in this app only; closing Herdrm ends the shell.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.textTertiary)
                 }

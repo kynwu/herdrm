@@ -81,6 +81,36 @@ final class SidebarSpaceRowMenuUIUXTests: XCTestCase {
         XCTAssertTrue(items.contains(String(localized: "Project…")), "\(items)")
     }
 
+    func testCloseAllAsksOnceForWhatTheSidebarLists() throws {
+        let sidebar = try SidebarHarness(spaces: 3, agents: 4, terminals: 2, pinnedHeaders: false)
+        let items = try sidebar.spaceMenu("Space 1")
+        XCTAssertTrue(items.contains(String(localized: "Close All Spaces…")), "\(items)")
+
+        let model = sidebar.model
+        model.requestCloseAllAgents()
+        XCTAssertEqual(model.closeRequest?.title,
+                       String(localized: "Close all \(model.visibleAgents.count) agents?"))
+        model.closeRequest = nil
+        model.requestCloseAllTerminals()
+        XCTAssertEqual(model.closeRequest?.title,
+                       String(localized: "Close all \(model.visibleTerminals.count) terminals?"))
+        model.closeRequest = nil
+
+        let agent = try XCTUnwrap(model.visibleAgents.first)
+        let space = try XCTUnwrap(model.visibleSpaces.first { $0.workspace.workspaceID == agent.agent.workspaceID })
+        model.selectSpace(space.ref)
+        XCTAssertGreaterThan(model.visibleAgents.count, 0, "known-yes: the selected space has agents")
+        model.requestCloseAllAgents()
+        XCTAssertEqual(model.closeRequest?.title,
+                       String(localized: "Close all \(model.visibleAgents.count) agents in \(space.workspace.label)?"),
+                       "a space filter narrows what closes")
+        model.closeRequest = nil
+
+        model.selectSpace(try XCTUnwrap(model.visibleSpaces.first { $0.ref != space.ref && model.agentCount(in: $0) == 0 }).ref)
+        model.requestCloseAllAgents()
+        XCTAssertNil(model.closeRequest, "nothing to close asks nothing")
+    }
+
     func testProjectFromASpaceOpensTheProjectPaneOnThatSpace() throws {
         let sidebar = try SidebarHarness(spaces: 3, agents: 4, pinnedHeaders: false)
         let spaces = sidebar.model.visibleSpaces
