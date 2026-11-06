@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Before any session starts, so a reaped socket can never be one of ours.
         SSHTunnel.reapOrphanedForwards()
 
+        // Herdrm on iPhone reaches this Mac through the relay while it's on.
+        MainActor.assumeIsolated { RelayHostController.shared.startIfEnabled() }
+
         // `pkill herdrm` (and launchd) send SIGTERM, whose default action ends the
         // process on the spot: this delegate never hears of it and every ssh child
         // survives. Route it through the normal quit; a second SIGTERM still ends a
@@ -103,6 +106,9 @@ extension FocusedValues {
 
 @main
 struct HerdrMApp: App {
+    /// First, before the delegate (and its AppModel) reads any setting:
+    /// stored properties initialize in declaration order.
+    private let legacyDefaults: Void = LegacyDefaults.migrate()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("app.theme") private var themePreference = "system"
     /// Read here as well as in DetailView and Settings: an @AppStorage on the App
@@ -368,6 +374,8 @@ struct SettingsView: View {
                 .tabItem { Label("Agents", systemImage: "sparkles") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
+            RelaySettingsView()
+                .tabItem { Label("iPhone", systemImage: "iphone") }
             TailcatSettingsView(model: model)
                 .tabItem { Label("Tailcat", systemImage: "key") }
             AboutSettingsView()
@@ -383,37 +391,10 @@ struct AgentsSettingsView: View {
     @State private var argDrafts: [String: String] = [:]
     @State private var yoloMode = AgentLaunchArgsStore.yoloMode()
 
-    /// Kinds herdr ships manifests for (plus OMP, which starts through its
-    /// lifecycle extension). Kinds a connected server advertises beyond these
-    /// are appended with their raw name.
-    private static let knownKinds: [(kind: String, label: String)] = [
-        ("claude", "Claude"),
-        ("codex", "Codex"),
-        ("droid", "Droid"),
-        ("agy", "Antigravity"),
-        ("cursor", "Cursor"),
-        ("gemini", "Gemini"),
-        ("grok", "Grok"),
-        ("kimi", "Kimi"),
-        ("opencode", "OpenCode"),
-        ("copilot", "Copilot"),
-        ("devin", "Devin"),
-        ("cline", "Cline"),
-        ("kiro", "Kiro"),
-        ("amp", "Amp"),
-        ("hermes", "Hermes"),
-        ("kilo", "Kilo"),
-        ("qodercli", "Qoder"),
-        ("qwen", "Qwen Code"),
-        ("letta", "Letta"),
-        ("maki", "Maki"),
-        ("muse", "Muse"),
-        ("pi", "Pi"),
-        ("omp", "Oh My Pi"),
-    ]
-
+    /// Kinds a connected server advertises beyond `AgentKinds.known` are
+    /// appended with their raw name.
     private var kinds: [(kind: String, label: String)] {
-        var rows = Self.knownKinds
+        var rows = AgentKinds.known
         for session in model.sessions.values {
             for kind in session.agentCatalog.kinds where !rows.contains(where: { $0.kind == kind }) {
                 rows.append((kind, kind))

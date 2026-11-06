@@ -5,6 +5,66 @@ on [Keep a Changelog](https://keepachangelog.com); versions follow semver.
 Release automation extracts the matching section for GitHub release notes and
 the Sparkle update description — a release without a section here fails CI.
 
+## [Unreleased]
+
+## [0.7.0] - 2026-11-02
+
+> **Herdrm has a new bundle ID: `sb.moe.herdrm`** (it was `dev.bybee.herdrm`).
+> This update installs over the old app as usual, and Herdrm copies your
+> settings over on its first launch. macOS may ask once whether Herdrm can use
+> the passwords and keys it saved before: choose Always Allow. It may also ask
+> for notification permission again.
+>
+> **Herdrm now supports Herdrm for iOS.** Pair your iPhone from Settings →
+> iPhone, then reach this Mac's agents and terminals from the phone on any
+> network, end-to-end encrypted.
+
+### Added
+- **Reach your Mac from iPhone on any network.** Turn on Settings → iPhone on
+  the Mac and scan the code with Herdrm on iPhone (or the Camera app): the
+  phone pairs and connects through Herdrm's relay, without a public IP, port
+  forwarding or SSH setup on the phone. The session is end-to-end encrypted
+  (Noise IKpsk2); the relay can't read it. Pairing installs the phone's SSH key
+  restricted to connections through the relay, and Settings → iPhone lists and
+  removes paired phones. See docs/RELAY.md. A Mac with a public address can
+  give it in Settings → iPhone: the phone then connects directly and uses the
+  relay only as a fallback.
+- **iOS: SSH keys for servers you reach directly.** Add Device → Direct (IP or
+  hostname) signs in with your own private keys: import them under Keys (paste
+  or file; OpenSSH or PEM, Ed25519, ECDSA or RSA, with or without a
+  passphrase), or add one right from Add Device. Automatic tries the key that
+  worked for that server last, then the rest, the way OpenSSH does. Keys stay
+  in this iPhone's Keychain only (no iCloud, no other device), are never shown
+  again after import, and by default need Face ID before use.
+- **iOS: agents open as a chat.** An agent's screen on the phone defaults to a
+  Chat tab: your prompts, the agent's replies, and each tool call as a compact
+  row you can expand for its input and result. The live Terminal is one tap
+  away in the same screen. Works for Claude Code and (best effort) Codex, read
+  from the agent's own transcript on the device over SSH.
+- **iOS: answer an agent's questions with a tap.** When Claude Code stops on a
+  permission prompt, an AskUserQuestion question, or plan approval, the chat
+  shows the question with one button per option; options that take words
+  ("Type something.", "Tell Claude what to change") open a text field.
+  Tapping sends the keys the agent's terminal expects, and the card goes away
+  once the agent moves on. Codex approval prompts get the same card.
+- **iOS: start agents and terminals from the phone.** The + button on a
+  space's screen starts a new agent (Claude and Codex first, every other herdr
+  agent under More Agents) or a new terminal in that space, and opens it.
+
+### Changed
+- **New bundle ID `sb.moe.herdrm`** for the Mac app (and `sb.moe.herdrm-ios`
+  for iOS). Settings carry over from `dev.bybee.herdrm` on first launch;
+  Keychain items keep their names, so saved passwords, SSH keys and paired
+  iPhones stay.
+- **iOS: Server → Space → Agent.** The phone follows the Mac's layout: pick a
+  server, then one of its spaces, then an agent (or a terminal) in it.
+
+### Fixed
+- **iOS: switching apps no longer drops the connection.** Coming back to
+  Herdrm keeps the existing session (and its open terminal) when it still
+  answers, and reconnects only when it doesn't. The app also keeps the
+  connection up for a short while in the background.
+
 ## [0.6.25] - 2026-11-02
 
 > **Herdrm may be discontinued.** herdr has released its own official GUI app,
