@@ -7,6 +7,32 @@ the Sparkle update description — a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-07
+
+### Added
+
+- **Option key can type characters in the terminal.** Settings → Terminal → *Use Option as Meta key* (on by default). Turn it off on layouts that type characters with Option, such as ⌥L → `@` and ⌥N → `~` on German. ⌥⌫ and ⌥← / ⌥→ word editing keep working either way. ([#122](https://github.com/missuo/herdrm/issues/122))
+- **Agent usage in the sidebar.** View → *Show Agent Usage* (off by default) adds a row with Claude and Codex quota windows and OpenCode's token count; View → *Agents in Usage Row* picks which agents it shows. It reads only the selected pane's device, every five minutes while the window is visible. ([#205](https://github.com/missuo/herdrm/pull/205))
+
+### Fixed
+
+- **The highlighted Space is the filter you chose.** All Spaces stays
+  highlighted while the Agent and Terminal lists show every space, even when
+  the right-hand pane belongs to one of them. Selecting a pane from another
+  space (a grouped-sidebar row, the machine-stats panel) switches back to
+  All Spaces instead of leaving the old Space highlighted, and search,
+  notifications and ⌃Tab scroll to the selected Agent or Terminal row.
+- **Clicking into a terminal keeps the sidebar where it is.** Focusing an
+  Agent's or Terminal's input, including switching between split panes, no
+  longer scrolls the sidebar to its Space.
+- **Unread dots survive quitting and reopening Herdrm.** A result you haven't
+  opened keeps its dot after a relaunch without notifying again, results you
+  already read stay read, and results that finished while Herdrm was closed
+  notify once. ([#208](https://github.com/missuo/herdrm/issues/208))
+- **Unread dots no longer vanish while a server reconnects.** On herdr
+  versions that report completion sequences, a brief idle or unknown state
+  during reconnect keeps the dot; on older ones, idle still clears it.
+
 ## [0.7.0] - 2026-11-02
 
 > **Herdrm has a new bundle ID: `sb.moe.herdrm`** (it was `dev.bybee.herdrm`).

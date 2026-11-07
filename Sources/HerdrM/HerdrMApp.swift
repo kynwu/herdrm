@@ -115,6 +115,8 @@ struct HerdrMApp: App {
     /// invalidates the commands body, so the menu checkmark follows the setting.
     @AppStorage(TerminalDefaults.tabLayoutKey) private var tabLayoutEnabled = true
     @AppStorage(MachineStatsDefaults.showKey) private var showsMachineStats = true
+    @AppStorage(UsageDefaults.showKey) private var showsUsageStats = false
+    @AppStorage(UsageDefaults.agentsKey) private var usageAgents = UsageDefaults.defaultAgents
     @AppStorage(SidebarDefaults.groupBySpaceKey) private var groupSidebarBySpace = false
     @FocusedValue(\.appModel) private var focusedModel
     @FocusedValue(\.splitAxis) private var focusedSplitAxis
@@ -166,6 +168,20 @@ struct HerdrMApp: App {
             CommandGroup(after: .sidebar) {
                 // Off removes the sidebar meters and stops their sampler (one ssh per remote host).
                 Toggle("Show Machine Stats", isOn: $showsMachineStats)
+                // Off by default: on, the sidebar runs the picked agents' usage
+                // commands on the selected pane's device every five minutes.
+                Toggle("Show Agent Usage", isOn: $showsUsageStats)
+                Menu("Agents in Usage Row") {
+                    let picked = UsageDefaults.providers(from: usageAgents)
+                    ForEach(UsageProvider.allCases, id: \.self) { provider in
+                        Toggle(UsageDefaults.name(provider), isOn: Binding(
+                            get: { picked.contains(provider) },
+                            set: { _ in usageAgents = UsageDefaults.toggling(provider, in: usageAgents) }
+                        ))
+                        // The row always shows at least one agent.
+                        .disabled(picked == [provider])
+                    }
+                }
                 Button("Read full conversation") {
                     if let model = focusedModel, let entry = model.selectedEntry {
                         model.toggleConversationHistory(for: entry.ref)
@@ -526,6 +542,7 @@ struct TerminalSettingsView: View {
     @AppStorage(TerminalDefaults.lineSpacingKey) private var lineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage("terminal.mouseReporting") private var mouseReporting = true
     @AppStorage("terminal.copyOnSelect") private var copyOnSelect = true
+    @AppStorage(TerminalDefaults.optionAsAltKey) private var optionAsAlt = TerminalOptionAsAlt.both
     @AppStorage(TerminalDefaults.tabLayoutKey) private var tabLayout = true
 
     @State private var importMessage: String?
@@ -608,6 +625,19 @@ struct TerminalSettingsView: View {
                     }
                 }
 
+                Toggle(isOn: Binding(
+                    get: { optionAsAlt == .both },
+                    set: { optionAsAlt = $0 ? .both : .off }
+                )) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Use Option as Meta key")
+                        Text("Option chords like ⌥B and ⌥F reach the terminal as Esc sequences. Turn off if your keyboard layout types characters with Option, like ⌥L for @ on a German layout.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 Toggle(isOn: $tabLayout) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Show every pane of the selected tab")
@@ -627,6 +657,7 @@ struct TerminalSettingsView: View {
                         thinStrokes = true
                         mouseReporting = true
                         copyOnSelect = true
+                        optionAsAlt = .both
                         importMessage = nil
                     }
                     Button("Import from Ghostty…") { importFromGhostty() }

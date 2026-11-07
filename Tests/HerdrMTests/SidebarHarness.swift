@@ -14,10 +14,12 @@ final class SidebarHarness {
     enum ScrollTarget { case top, bottom, offset(CGFloat) }
 
     let model: AppModel
+    private let attentionSuiteName: String?
     private let root: NSHostingView<AnyView>
     private let window: NSWindow
     private let scroll: NSScrollView
     private var signatures: [Header: [Double]] = [:]
+    private var inputTerminals: [PaneRef: LineBreakTerminalView] = [:]
 
     /// - Parameters: number of fake workspaces / agents shown in the sidebar.
     /// - Parameter agentTokens: pane `tokens` map given to every fake agent
@@ -25,8 +27,11 @@ final class SidebarHarness {
     /// - Parameter sheets: attach the app's New Agent / New Terminal / New Space
     ///   sheets, so a button press can be followed to the sheet it opens.
     /// - Parameter pinnedHeaders: learn the header titles for `pinnedHeader`; needs a list long enough to scroll.
-    init(spaces: Int, agents: Int, terminals: Int = 0, agentTokens: [String: String]? = nil, agentKinds: [String] = [], device: Device = .local, sheets: Bool = false, appearance: NSAppearance.Name = .darkAqua, pinnedHeaders: Bool = true, width: CGFloat = 260, height: CGFloat = 600, configureModel: ((AppModel) throws -> Void)? = nil) throws {
-        model = try Self.fakeModel(spaces: spaces, agents: agents, terminals: terminals, agentTokens: agentTokens, agentKinds: agentKinds, device: device)
+    init(spaces: Int, agents: Int, terminals: Int = 0, agentTokens: [String: String]? = nil, agentKinds: [String] = [], device: Device = .local, sheets: Bool = false, appearance: NSAppearance.Name = .darkAqua, pinnedHeaders: Bool = true, width: CGFloat = 260, height: CGFloat = 600, attentionDefaults: UserDefaults? = nil, configureModel: ((AppModel) throws -> Void)? = nil) throws {
+        let suiteName = attentionDefaults == nil ? "SidebarHarness.attention.\(UUID().uuidString)" : nil
+        attentionSuiteName = suiteName
+        let defaults = attentionDefaults ?? UserDefaults(suiteName: suiteName!)!
+        model = try Self.fakeModel(spaces: spaces, agents: agents, terminals: terminals, agentTokens: agentTokens, agentKinds: agentKinds, device: device, attentionDefaults: defaults)
         try configureModel?(model)
         let sidebar = SidebarView(model: model, collapsed: .constant(false), width: width).frame(width: width, height: height)
         root = NSHostingView(rootView: sheets ? AnyView(sidebar.newItemSheets(model: model)) : AnyView(sidebar))
@@ -43,6 +48,7 @@ final class SidebarHarness {
     }
 
     deinit {
+        if let attentionSuiteName { UserDefaults.standard.removePersistentDomain(forName: attentionSuiteName) }
         window.sheets.forEach { window.endSheet($0) }
         window.close()
     }
@@ -142,6 +148,46 @@ final class SidebarHarness {
     func mountTerminal(_ view: LineBreakTerminalView, focus: Bool = false) {
         root.addSubview(view)
         if focus { window.makeFirstResponder(view) }
+    }
+
+    /// Real terminal mouse handling beside the sidebar, without starting a
+    /// PTY, SSH connection or agent. Keep the sidebar's existing geometry.
+    func mountInputTerminals(for panes: [PaneRef]) {
+        let sidebarSize = root.frame.size
+        let paneWidth: CGFloat = 280
+        let contentSize = NSSize(width: sidebarSize.width + paneWidth * CGFloat(panes.count),
+                                 height: sidebarSize.height)
+        let content = NSView(frame: NSRect(origin: .zero, size: contentSize))
+        root.removeFromSuperview()
+        window.contentView = content
+        window.setContentSize(contentSize)
+        root.autoresizingMask = []
+        root.frame = NSRect(origin: .zero, size: sidebarSize)
+        content.addSubview(root)
+        for (index, pane) in panes.enumerated() {
+            let view = LineBreakTerminalView(frame: NSRect(
+                x: sidebarSize.width + paneWidth * CGFloat(index) + 10, y: 12,
+                width: paneWidth - 20, height: sidebarSize.height - 24))
+            view.mouseReportingEnabled = false
+            // DetailView.attachChild's own activation binding, not a copy.
+            view.onActivate = DetailView.inputActivation(for: pane, in: model)
+            content.addSubview(view)
+            inputTerminals[pane] = view
+        }
+        settle()
+    }
+
+    func clickInputTerminal(_ pane: PaneRef) throws {
+        let view = try XCTUnwrap(inputTerminals[pane], "no input terminal for \(pane)")
+        let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        let content = try XCTUnwrap(window.contentView)
+        let target = try XCTUnwrap(content.hitTest(content.superview?.convert(point, from: nil) ?? point))
+        XCTAssertTrue(target === view, "The click must reach the actual terminal view")
+        let (down, up) = try mouseClick(at: point)
+        target.mouseDown(with: down)
+        target.mouseUp(with: up)
+        settle()
+        XCTAssertTrue(window.firstResponder === view, "The input terminal must still receive keyboard focus")
     }
 
     var terminalFirstResponder: NSResponder? { window.firstResponder }
@@ -342,6 +388,15 @@ final class SidebarHarness {
         return visible.contains(frame)
     }
 
+    /// An Agent or Terminal row, by the same viewport rule as `visibleSpaceRow`.
+    func visiblePaneRow(_ title: String) -> Bool {
+        visibleSpaceRow(title)
+    }
+
+    func paneRowIsSelected(_ title: String) throws -> Bool {
+        try paneTitle(title).isSelected == true
+    }
+
     func spaceRowIsSelected(_ name: String) throws -> Bool {
         try spaceTitle(name).isSelected == true
     }
@@ -474,9 +529,12 @@ final class SidebarHarness {
         return out
     }
 
-    /// Ink is thin, so most of a region is background.
+    /// Ink is thin, so most of a region is background. An empty sample
+    /// (the region landed off-render on this run) returns a neutral 1.0 so
+    /// the contrast assertions fail as failures — subscripting an empty
+    /// array here trapped SIGTRAP and took the whole suite down with it.
     private static func background(_ values: [Double]) -> Double {
-        values.sorted()[values.count / 2]
+        values.isEmpty ? 1.0 : values.sorted()[values.count / 2]
     }
 
     /// Contrast of the pixel that differs most from the background.
@@ -505,8 +563,8 @@ final class SidebarHarness {
 
     // MARK: - Fake data
 
-    private static func fakeModel(spaces: Int, agents: Int, terminals: Int, agentTokens: [String: String]?, agentKinds: [String], device: Device) throws -> AppModel {
-        let model = AppModel()
+    private static func fakeModel(spaces: Int, agents: Int, terminals: Int, agentTokens: [String: String]?, agentKinds: [String], device: Device, attentionDefaults: UserDefaults) throws -> AppModel {
+        let model = AppModel(attentionDefaults: attentionDefaults)
         model.devices = device == .local ? [device] : [.local, device]
         var state = DeviceSessionState()
         state.workspaces = try (0..<spaces).map { i in

@@ -600,6 +600,7 @@ struct DetailView: View {
     @AppStorage(TerminalDefaults.lineSpacingKey) private var terminalLineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage("terminal.mouseReporting") private var terminalMouseReporting = true
     @AppStorage("terminal.copyOnSelect") private var terminalCopyOnSelect = true
+    @AppStorage(TerminalDefaults.optionAsAltKey) private var terminalOptionAsAlt = TerminalOptionAsAlt.both
     @Environment(\.colorScheme) private var colorScheme
     /// Per-entry attach state, keyed by `AttachedEntry.id`. `endedAttach` holds the exit
     /// code of a dead attach (nil code = no status, e.g. killed by a signal); a present
@@ -631,6 +632,7 @@ struct DetailView: View {
                     dark: colorScheme == .dark,
                     mouseReporting: terminalMouseReporting,
                     copyOnSelect: terminalCopyOnSelect,
+                    optionAsAlt: terminalOptionAsAlt,
                     isVisible: model.selectedShellID == session.id && !model.isDetailCovered,
                     onAttachmentError: { model.actionError = $0 },
                     onAttachmentUploadingChanged: { uploadingAttachment = $0 },
@@ -697,6 +699,7 @@ struct DetailView: View {
                     dark: colorScheme == .dark,
                     mouseReporting: terminalMouseReporting,
                     copyOnSelect: terminalCopyOnSelect,
+                    optionAsAlt: terminalOptionAsAlt,
                     isVisible: model.selectedShellID == nil && !model.isDetailCovered,
                     onExit: { _ in model.shellSplitAxis = nil },
                     onViewReady: {
@@ -851,6 +854,14 @@ struct DetailView: View {
         }
     }
 
+    /// A click into a terminal's input. It selects that pane in place and never
+    /// reveals it in the sidebar: the user is looking at the terminal, not the
+    /// list. `SidebarHarness` binds its input terminals through this same
+    /// function, so the sidebar tests cover this exact wiring.
+    static func inputActivation(for ref: PaneRef, in model: AppModel) -> () -> Void {
+        { [weak model] in model?.focusVisiblePane(ref) }
+    }
+
     /// One kept-alive attach. Stays in the hierarchy while hidden (opacity 0, no hit
     /// testing) so its content survives; visible panes are interactive. In a tab layout
     /// the selected pane carries a thin accent ring, the TUI's focused-border cue.
@@ -882,13 +893,14 @@ struct DetailView: View {
                 dark: colorScheme == .dark,
                 mouseReporting: terminalMouseReporting,
                 copyOnSelect: terminalCopyOnSelect,
+                optionAsAlt: terminalOptionAsAlt,
                 // A selected shell or a covering detail mode hides the attach side.
                 isVisible: isVisible && model.selectedShellID == nil && !model.isDetailCovered,
                 historyService: model.service(for: session.device),
                 onAttachmentError: { model.actionError = $0 },
                 onAttachmentUploadingChanged: { uploadingAttachment = $0 },
                 onExit: { code in endedAttach[session.id] = code },
-                onActivate: { model.focusVisiblePane(session.ref, revealSpace: true) }
+                onActivate: Self.inputActivation(for: session.ref, in: model)
             )
                 // Keyed on the retry generation only — NOT colorScheme. A theme toggle
                 // must re-theme live via updateNSView (as the split shell already does);
