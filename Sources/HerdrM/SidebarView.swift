@@ -935,6 +935,9 @@ struct SidebarView: View {
 enum SidebarDefaults {
     /// Group the Spaces section as space > tab main pane > children.
     static let groupBySpaceKey = "sidebar.groupBySpace"
+    /// Status marks as herdr's own symbols (× ◐ ✓ ○ ·) instead of the
+    /// spinner and unread dot.
+    static let statusSymbolsKey = "sidebar.statusSymbols"
     /// Leading inset per level of the pane tree.
     static let indentWidth: CGFloat = 14
     /// A space's own panes start under its name: the chevron column (20),
@@ -1259,10 +1262,17 @@ private struct SpaceRowView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(expanded ? String(localized: "Collapse space") : String(localized: "Expand space"))
             }
+            if entry.indented {
+                // Outside the row's own frame, so its click target and
+                // VoiceOver frame start where its title does.
+                Color.clear.frame(width: SidebarDefaults.indentWidth)
+            }
             HStack(spacing: 8) {
-                Image(systemName: "folder")
+                // A worktree sits one step in, under its main checkout.
+                Image(systemName: entry.indented ? "arrow.triangle.branch" : "folder")
                     .font(.system(size: 11.5))
                     .foregroundStyle(selected ? Theme.textSecondary : Theme.textTertiary)
+                    .frame(width: 14)
                 Text(entry.workspace.label)
                     .font(.system(size: 13))
                     .foregroundStyle(selected ? Theme.text : Theme.textSecondary)
@@ -1333,6 +1343,9 @@ private struct SpaceRowView: View {
 
     private var accessibilityLabel: String {
         var parts = [entry.workspace.label]
+        if entry.indented, let repo = entry.workspace.worktree?.repoName {
+            parts.append(String(localized: "worktree of \(repo)"))
+        }
         switch model.attention(in: entry) {
         case .blocked: parts.append(String(localized: "Needs input"))
         case .unreadDone: parts.append(String(localized: "Unread"))

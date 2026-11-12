@@ -399,6 +399,10 @@ final class AppModel: ObservableObject {
     @Published var terminalToRename: TerminalEntry?
     /// The device whose grazr accounts window is open.
     @Published var grazrAccountsDevice: Device?
+    /// What Sync accounts across devices is doing, for the Accounts window.
+    @Published var grazrSyncStatus: GrazrSyncStatus = .off
+    /// Keeps every grazr device on one order and one active account.
+    lazy var grazrSync = GrazrSyncCoordinator(model: self)
     /// Agent usage behind the sidebar's opt-in usage row, in its own object
     /// like `machineStats`, so a reading re-renders only the row. A `var`
     /// so tests can hand in a model whose store runs no real commands;
@@ -652,14 +656,21 @@ final class AppModel: ObservableObject {
     struct SpaceEntry: Identifiable {
         let device: Device
         let workspace: WorkspaceInfo
+        /// A linked git worktree listed under its repository's main checkout.
+        var indented = false
 
         var id: String { "\(device.id.uuidString)-\(workspace.workspaceID)" }
         var ref: SpaceRef { SpaceRef(deviceID: device.id, workspaceID: workspace.workspaceID) }
     }
 
+    /// Each device's spaces in sidebar order: herdr's, with a repository's
+    /// worktrees under its main checkout the way herdr's sidebar groups them.
     var visibleSpaces: [SpaceEntry] {
         devicesInScope.flatMap { device in
-            session(device.id).workspaces.map { SpaceEntry(device: device, workspace: $0) }
+            let workspaces = session(device.id).workspaces
+            return WorktreeGroups.entries(workspaces).map {
+                SpaceEntry(device: device, workspace: workspaces[$0.index], indented: $0.indented)
+            }
         }
     }
 
@@ -1671,6 +1682,7 @@ final class AppModel: ObservableObject {
         // the user's running agents merely because a window appears.
         guard ProcessInfo.processInfo.environment["HERDRM_TEST_MODE"] != "1" else { return }
         NotificationManager.shared.setup(model: self)
+        grazrSync.startIfEnabled()
         // Finder-launched apps have launchd's PATH. Capture the login +
         // interactive shell environment on a background thread once; New Agent
         // lookup, herdr spawn, and terminal attach all read the same snapshot.
@@ -1850,7 +1862,10 @@ final class AppModel: ObservableObject {
         // An older server without plugin RPCs keeps an empty menu section.
         guard let actions = try? await service.pluginActions() else { return }
         sessions[deviceID]?.pluginActions = PluginActionGroup.menu(actions)
+        let learnedGrazr = sessions[deviceID]?.usesGrazr == false
         sessions[deviceID]?.usesGrazr = actions.contains(where: { $0.pluginID == Grazr.pluginID })
+        // A device connecting after launch joins the account sync now, not a minute later.
+        if learnedGrazr, session(deviceID).usesGrazr { grazrSync.kick() }
         // The first snapshot came before this, so a pane already waiting on
         // the usage-credits dialog when herdrm connected is checked now.
         if let device = device(deviceID) {
@@ -1865,12 +1880,15 @@ final class AppModel: ObservableObject {
     }
 
     /// A failed read keeps the last list; the menu only offers what it shows.
-    func loadGrazrReport(deviceID: UUID) async {
+    /// False then, so the account sync can tell a stale report from a fresh one.
+    @discardableResult
+    func loadGrazrReport(deviceID: UUID) async -> Bool {
         guard let device = device(deviceID),
               let output = try? await DeviceFileService(device: device).run(Grazr.readerCommand),
               let report = try? JSONDecoder().decode(GrazrReport.self, from: output)
-        else { return }
+        else { return false }
         sessions[deviceID]?.grazrReport = report
+        return true
     }
 
     /// Moves Claude on `device` to `account` with grazr, like its swap action
@@ -1896,6 +1914,7 @@ final class AppModel: ObservableObject {
                 actionError = actionErrorMessage(error, device: device)
             }
             await loadGrazrReport(deviceID: device.id)
+            grazrSync.kick()
             await refresh(device.id)
         }
     }
@@ -2639,6 +2658,16 @@ final class AppModel: ObservableObject {
 
     /// Settings › Agents: answer Claude's usage-credits dialog by switching model.
     static let autoModelSwitchKey = "grazr.autoModelSwitch"
+    /// Keep every device's grazr on one order and active account (`GrazrSyncCoordinator`).
+    static let syncAccountsKey = "grazr.syncAccounts"
+    /// Set once the user applied the first round (or there was nothing to
+    /// approve). Enabled but not applied, a launch shows the preview again.
+    static let syncAccountsAppliedKey = "grazr.syncAccounts.applied"
+    /// The planner's `lastSeen`/`target`, so a restart tells a device's own
+    /// change from a push HerdrM made (JSON).
+    static let syncAccountsStateKey = "grazr.syncAccounts.state"
+    /// Devices the user left out of the sync (uuid strings). Absent means every device is in.
+    static let syncAccountsExcludedKey = "grazr.syncAccounts.excluded"
 
     /// When the week's Fable allowance is spent, Claude Code stops before its
     /// next request and asks whether to switch to its fallback model or pay
@@ -3012,6 +3041,8 @@ final class AppModel: ObservableObject {
             } catch {
                 actionError = actionErrorMessage(error, device: device)
             }
+            // grazr's own swap moved this device; the others follow.
+            if action.pluginID == Grazr.pluginID { grazrSync.kick() }
         }
     }
 
@@ -3041,12 +3072,12 @@ final class AppModel: ObservableObject {
     /// Cross-device drops are ignored; herdr remains the source of truth after refresh.
     func moveSpace(_ source: SpaceEntry, onto target: SpaceEntry, placeAfter: Bool) {
         guard source.device.id == target.device.id else { return }
-        let orderedIDs = session(source.device.id).workspaces.map(\.workspaceID)
-        guard let plan = WorkspaceReorder.plan(
+        // A main checkout brings its worktrees; a drop never splits a group.
+        guard let plan = WorktreeGroups.plan(
             moving: source.workspace.workspaceID,
             onto: target.workspace.workspaceID,
             placeAfter: placeAfter,
-            orderedIDs: orderedIDs
+            workspaces: session(source.device.id).workspaces
         ) else { return }
 
         if let current = sessions[source.device.id]?.workspaces {

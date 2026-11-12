@@ -22,8 +22,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Before any session starts, so a reaped socket can never be one of ours.
         SSHTunnel.reapOrphanedForwards()
 
-        // Herdrm on iPhone reaches this Mac through the relay while it's on.
-        MainActor.assumeIsolated { RelayHostController.shared.startIfEnabled() }
+        // The test host is a fresh ad-hoc build each run: the Keychain would
+        // ask about every item the installed app owns. Tests use their own.
+        if !LaunchEnvironment.isTestHost {
+            // Before anything reads them: Keychain items move from the old
+            // bundle id's names (dev.bybee.herdrm.*) to sb.moe.herdrm.*.
+            KeychainServiceMigration.migrateIfNeeded()
+            // Herdrm on iPhone reaches this Mac through the relay while it's on.
+            MainActor.assumeIsolated { RelayHostController.shared.startIfEnabled() }
+        }
 
         // `pkill herdrm` (and launchd) send SIGTERM, whose default action ends the
         // process on the spot: this delegate never hears of it and every ssh child
@@ -131,7 +138,8 @@ struct HerdrMApp: App {
             Self.runSSHAskPass()
         }
         AppLanguage.synchronize()
-        SSHCredentialStore.purgeAuthorizations()
+        // Not in the test host, whose ad-hoc build the Keychain would ask about.
+        if !LaunchEnvironment.isTestHost { SSHCredentialStore.purgeAuthorizations() }
         TerminalDefaults.registerBundledFonts()
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
@@ -746,6 +754,7 @@ struct AppearanceSettingsView: View {
     @AppStorage("app.theme") private var themePreference = "system"
     @AppStorage(AppLanguage.defaultsKey) private var language = AppLanguage.system.rawValue
     @AppStorage(SidebarDefaults.groupBySpaceKey) private var groupSidebarBySpace = false
+    @AppStorage(SidebarDefaults.statusSymbolsKey) private var statusSymbols = false
 
     var body: some View {
         Form {
@@ -769,6 +778,17 @@ struct AppearanceSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Toggle(isOn: $statusSymbols) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Use herdr status symbols")
+                    Text("Mark agents the way herdr's sidebar does: × needs input, ◐ working, ✓ done and not yet read, ○ idle, · unknown.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("settings.statusSymbols")
 
             LabeledContent("Language") {
                 HStack(spacing: 8) {
